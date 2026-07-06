@@ -1,0 +1,5 @@
+# 다운로드된 위키 사본과 로그는 올리지 않음 (다시 받으면 됨)
+*.html
+!index.html
+*.log
+.DS_Store

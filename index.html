@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오프라인 위키디피아 관리</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Apple SD Gothic Neo", sans-serif;
+         background: #f6f6f4; color: #202122; margin: 0; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: #72777d; font-size: 14px; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #dfe1e5; border-radius: 12px;
+          padding: 16px; margin-bottom: 16px; }
+  .add-row { display: flex; gap: 8px; position: relative; }
+  select, input[type=text] { font-size: 15px; padding: 10px 12px;
+          border: 1px solid #c8ccd1; border-radius: 8px; background: #fff; }
+  input[type=text] { flex: 1; }
+  input[type=text]:focus { outline: 2px solid #36c; border-color: #36c; }
+  button { font-size: 14px; padding: 10px 16px; border: none; border-radius: 8px;
+           background: #36c; color: #fff; cursor: pointer; font-weight: 600; }
+  button:hover { background: #2a4b8d; }
+  button:disabled { background: #a2a9b1; cursor: wait; }
+  button.ghost { background: transparent; color: #36c; border: 1px solid #c8ccd1; }
+  button.ghost:hover { background: #eaf0fa; }
+  button.danger { background: transparent; color: #d33; border: 1px solid #e5c1c1; }
+  button.danger:hover { background: #fbeaea; }
+  .suggest { position: absolute; top: 100%; left: 70px; right: 90px; z-index: 10;
+             background: #fff; border: 1px solid #c8ccd1; border-radius: 8px;
+             margin-top: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+             max-height: 260px; overflow-y: auto; }
+  .suggest div { padding: 9px 14px; cursor: pointer; font-size: 15px; }
+  .suggest div:hover, .suggest div.active { background: #eaf0fa; }
+  ul.pages { list-style: none; padding: 0; margin: 0; }
+  ul.pages li { display: flex; align-items: center; gap: 12px;
+                padding: 13px 6px; border-bottom: 1px solid #eee; }
+  ul.pages li:last-child { border-bottom: none; }
+  .badge { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 6px;
+           background: #eaf0fa; color: #36c; flex-shrink: 0; }
+  .badge.en { background: #eef7ee; color: #2a7d2a; }
+  .pinfo { flex: 1; min-width: 0; }
+  .pname { font-size: 16px; font-weight: 600; }
+  .pmeta { font-size: 12px; color: #72777d; margin-top: 2px; }
+  .pname a { color: inherit; text-decoration: none; }
+  .pname a:hover { color: #36c; text-decoration: underline; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center;
+             margin-bottom: 10px; }
+  .toolbar h2 { font-size: 16px; margin: 0; color: #54595d; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+           background: #202122; color: #fff; padding: 11px 20px; border-radius: 10px;
+           font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none;
+           max-width: 90%; }
+  #toast.show { opacity: .95; }
+  .empty { color: #a2a9b1; text-align: center; padding: 30px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📚 오프라인 위키디피아</h1>
+  <div class="sub">매일 오전 9시에 자동 갱신 · 프린터 0대로 운영 중 (what-if #59 참조)</div>
+
+  <div class="card">
+    <div class="add-row">
+      <select id="lang">
+        <option value="ko">한국어</option>
+        <option value="en">English</option>
+      </select>
+      <input type="text" id="search" placeholder="추가할 문서 검색 (예: 달, 파이썬)" autocomplete="off">
+      <button id="addBtn">추가</button>
+      <div class="suggest" id="suggest" hidden></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <h2 id="count">저장된 문서</h2>
+      <button class="ghost" id="updateBtn">🔄 전체 갱신</button>
+    </div>
+    <ul class="pages" id="list"></ul>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let toastTimer;
+function toast(msg) {
+  $('toast').textContent = msg;
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3000);
+}
+function fmtSize(b) {
+  return b > 1024 * 1024 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+}
+async function api(path, body) {
+  const res = await fetch(path, body
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    : undefined);
+  return res.json();
+}
+
+async function refresh() {
+  const { pages } = await api('/api/pages');
+  $('count').textContent = `저장된 문서 ${pages.length}개`;
+  if (!pages.length) {
+    $('list').innerHTML = '<div class="empty">아직 문서가 없어요. 위에서 검색해서 추가해보세요.</div>';
+    return;
+  }
+  $('list').innerHTML = pages.map(p => `
+    <li>
+      <span class="badge ${p.lang}">${p.lang.toUpperCase()}</span>
+      <div class="pinfo">
+        <div class="pname">${p.exists
+          ? `<a href="/files/${encodeURIComponent(p.file)}" target="_blank">${p.title}</a>`
+          : p.title}</div>
+        <div class="pmeta">${p.exists ? `${fmtSize(p.size)} · ${p.updated} 갱신` : '아직 다운로드 안 됨'}</div>
+      </div>
+      <button class="danger" data-lang="${p.lang}" data-title="${p.title}">삭제</button>
+    </li>`).join('');
+  $('list').querySelectorAll('button.danger').forEach(btn => {
+    btn.onclick = async () => {
+      const { lang, title } = btn.dataset;
+      if (!confirm(`"${title}" 문서를 목록과 파일에서 삭제할까요?`)) return;
+      await api('/api/remove', { lang, title });
+      toast(`"${title}" 삭제 완료`);
+      refresh();
+    };
+  });
+}
+
+async function addPage(title) {
+  const lang = $('lang').value;
+  title = (title || $('search').value).trim();
+  if (!title) return;
+  $('suggest').hidden = true;
+  $('addBtn').disabled = true;
+  $('addBtn').textContent = '다운로드 중…';
+  try {
+    const r = await api('/api/add', { lang, title });
+    if (r.ok) { toast(`"${title}" 추가 완료 ✓`); $('search').value = ''; refresh(); }
+    else toast(r.error || '추가 실패');
+  } catch (e) { toast('오류: ' + e.message); }
+  $('addBtn').disabled = false;
+  $('addBtn').textContent = '추가';
+}
+
+// 위키백과 실시간 검색 제안 (opensearch API, CORS 허용됨)
+let debounce;
+$('search').addEventListener('input', () => {
+  clearTimeout(debounce);
+  const q = $('search').value.trim();
+  if (!q) { $('suggest').hidden = true; return; }
+  debounce = setTimeout(async () => {
+    const lang = $('lang').value;
+    const url = `https://${lang}.wikipedia.org/w/api.php?action=opensearch&limit=7&origin=*&format=json&search=${encodeURIComponent(q)}`;
+    try {
+      const [, titles] = await (await fetch(url)).json();
+      if (!titles.length) { $('suggest').hidden = true; return; }
+      $('suggest').innerHTML = titles.map(t => `<div>${t}</div>`).join('');
+      $('suggest').hidden = false;
+      $('suggest').querySelectorAll('div').forEach(d => {
+        d.onclick = () => { $('search').value = d.textContent; addPage(d.textContent); };
+      });
+    } catch (e) { /* 오프라인이면 제안 없이 직접 입력 */ }
+  }, 250);
+});
+$('search').addEventListener('keydown', e => { if (e.key === 'Enter') addPage(); });
+document.addEventListener('click', e => {
+  if (!e.target.closest('.add-row')) $('suggest').hidden = true;
+});
+$('addBtn').onclick = () => addPage();
+
+$('updateBtn').onclick = async () => {
+  $('updateBtn').disabled = true;
+  $('updateBtn').textContent = '갱신 중…';
+  try {
+    const r = await api('/api/update', {});
+    const ok = r.results.filter(x => x.ok).length;
+    const fail = r.results.length - ok;
+    toast(`전체 갱신 완료: 성공 ${ok}건${fail ? `, 실패 ${fail}건` : ''}`);
+    refresh();
+  } catch (e) { toast('갱신 오류: ' + e.message); }
+  $('updateBtn').disabled = false;
+  $('updateBtn').textContent = '🔄 전체 갱신';
+};
+
+refresh();
+</script>
+</body>
+</html>
