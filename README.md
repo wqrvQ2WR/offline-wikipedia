@@ -1,4 +1,6 @@
-# 📚 오프라인 위키디피아
+# 📚 오프라인 위키디피아 / Offline Wikipedia
+
+**한국어** | [English](#-offline-wikipedia-english)
 
 > xkcd [what-if #59 "Updating a Printed Wikipedia"](https://what-if.xkcd.com/59/)에서 시작한 프로젝트.
 > 랜들 먼로 계산으로는 인쇄본 위키피디아를 최신으로 유지하는 데 프린터 6대와 월 50만 달러(대부분 잉크값)가 필요하다.
@@ -58,3 +60,68 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.offline-wiki
 
 - 본문 텍스트와 표는 완전 오프라인으로 읽을 수 있지만, 이미지는 위키백과 서버에서 불러오므로 온라인일 때만 보인다.
 - 위키피디아가 블랙아웃 항의를 하면 매직펜으로 직접 칠해야 한다.
+
+---
+
+# 📚 Offline Wikipedia (English)
+
+[한국어](#-오프라인-위키디피아--offline-wikipedia) | **English**
+
+> A project inspired by xkcd's [what-if #59 "Updating a Printed Wikipedia"](https://what-if.xkcd.com/59/).
+> By Randall Munroe's math, keeping a printed Wikipedia up to date takes 6 printers and about $500,000 a month (mostly ink).
+> This repo does the same job with 0 printers and $0 of ink.
+
+It saves the Wikipedia articles you choose as offline HTML copies, and overwrites them with the latest content once a day.
+
+## What's inside
+
+| File | Role |
+|---|---|
+| `update.py` | Downloads the articles listed in `pages.txt` via the Wikipedia REST API and saves them as HTML (no dependencies, Python 3 stdlib only) |
+| `pages.txt` | List of articles to fetch — one per line, in `langcode:Article title` format |
+| `app.py` + `index.html` | Management web app (port 8459) — search & add, remove, refresh all, open saved copies |
+| `위키 관리 앱 실행.command` | Double-click launcher for the app (macOS) |
+
+## Usage
+
+```bash
+# Refresh once
+python3 update.py
+
+# Run the management app → http://localhost:8459
+python3 app.py --open
+```
+
+To add an article, search for it in the app, or append a line like `en:Moon` to `pages.txt`.
+
+## Daily auto-update (macOS launchd)
+
+Create `~/Library/LaunchAgents/com.<name>.offline-wikipedia.plist` to run `update.py` daily:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.example.offline-wikipedia</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/absolute/path/to/update.py</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+</dict>
+</plist>
+```
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.offline-wikipedia.plist
+```
+
+⚠️ **Warning**: If the project folder lives under `~/Desktop`, `~/Documents`, or `~/Downloads`, macOS privacy protection (TCC) blocks launchd from running it — you'll get `Operation not permitted`. Keep it outside protected areas (e.g. `~/Library/OfflineWikipedia`) and drop a symlink wherever you like.
+
+## Limitations
+
+- Article text and tables are fully readable offline, but images are loaded from Wikipedia's servers, so they only show up while online.
+- If Wikipedia stages a blackout protest, you'll have to black out the pages with a marker yourself.
