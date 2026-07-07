@@ -39,6 +39,7 @@
   .badge { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 6px;
            background: #eaf0fa; color: #36c; flex-shrink: 0; }
   .badge.en { background: #eef7ee; color: #2a7d2a; }
+  .badge.namu { background: #e0f5f2; color: #00a495; }
   .pinfo { flex: 1; min-width: 0; }
   .pname { font-size: 16px; font-weight: 600; }
   .pmeta { font-size: 12px; color: #72777d; margin-top: 2px; }
@@ -63,8 +64,9 @@
   <div class="card">
     <div class="add-row">
       <select id="lang">
-        <option value="ko">한국어</option>
-        <option value="en">English</option>
+        <option value="ko">위키백과</option>
+        <option value="en">Wikipedia</option>
+        <option value="namu">나무위키</option>
       </select>
       <input type="text" id="search" placeholder="추가할 문서 검색 (예: 달, 파이썬)" autocomplete="off">
       <button id="addBtn">추가</button>
@@ -146,12 +148,21 @@ async function addPage(title) {
   $('addBtn').textContent = '추가';
 }
 
+// 나무위키는 검색 API가 없어서 정확한 제목 직접 입력
+$('lang').addEventListener('change', () => {
+  const namu = $('lang').value === 'namu';
+  $('search').placeholder = namu
+    ? '나무위키 문서 제목 정확히 입력 (예: 나무위키)'
+    : '추가할 문서 검색 (예: 달, 파이썬)';
+  if (namu) $('suggest').hidden = true;
+});
+
 // 위키백과 실시간 검색 제안 (opensearch API, CORS 허용됨)
 let debounce;
 $('search').addEventListener('input', () => {
   clearTimeout(debounce);
   const q = $('search').value.trim();
-  if (!q) { $('suggest').hidden = true; return; }
+  if (!q || $('lang').value === 'namu') { $('suggest').hidden = true; return; }
   debounce = setTimeout(async () => {
     const lang = $('lang').value;
     const url = `https://${lang}.wikipedia.org/w/api.php?action=opensearch&limit=7&origin=*&format=json&search=${encodeURIComponent(q)}`;

@@ -6,7 +6,7 @@
 > 랜들 먼로 계산으로는 인쇄본 위키피디아를 최신으로 유지하는 데 프린터 6대와 월 50만 달러(대부분 잉크값)가 필요하다.
 > 이 저장소는 같은 일을 프린터 0대, 잉크값 $0로 한다.
 
-원하는 위키백과 문서들을 오프라인 HTML 사본으로 저장하고, 매일 한 번 자동으로 최신 내용으로 덮어쓴다.
+원하는 위키백과·나무위키 문서들을 오프라인 HTML 사본으로 저장하고, 매일 한 번 자동으로 최신 내용으로 덮어쓴다.
 
 ## 구성
 
@@ -28,6 +28,13 @@ python3 app.py --open
 ```
 
 문서 추가는 앱에서 검색하거나, `pages.txt`에 `ko:문서제목` 한 줄 추가하면 된다.
+
+### 지원 사이트
+
+| 코드 | 사이트 | 비고 |
+|---|---|---|
+| `ko`, `en` 등 | 위키백과 (해당 언어판) | 검색 자동완성 지원 |
+| `namu` | 나무위키 | 검색 API가 없어 **정확한 문서 제목**을 입력해야 함. 오프라인 사본은 스크립트를 제거한 정적 스냅샷으로 저장 |
 
 ## 매일 자동 갱신 (macOS launchd)
 
@@ -71,7 +78,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.offline-wiki
 > By Randall Munroe's math, keeping a printed Wikipedia up to date takes 6 printers and about $500,000 a month (mostly ink).
 > This repo does the same job with 0 printers and $0 of ink.
 
-It saves the Wikipedia articles you choose as offline HTML copies, and overwrites them with the latest content once a day.
+It saves the Wikipedia and Namuwiki articles you choose as offline HTML copies, and overwrites them with the latest content once a day.
 
 ## What's inside
 
@@ -93,6 +100,13 @@ python3 app.py --open
 ```
 
 To add an article, search for it in the app, or append a line like `en:Moon` to `pages.txt`.
+
+### Supported sites
+
+| Code | Site | Notes |
+|---|---|---|
+| `ko`, `en`, etc. | Wikipedia (that language edition) | Search autocomplete supported |
+| `namu` | Namuwiki (namu.wiki, Korean wiki) | No search API — enter the **exact article title**. Offline copies are saved as static snapshots with scripts stripped |
 
 ## Daily auto-update (macOS launchd)
 

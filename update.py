@@ -16,6 +16,9 @@ BASE_DIR = Path(__file__).resolve().parent
 PAGES_FILE = BASE_DIR / "pages.txt"
 LOG_FILE = BASE_DIR / "update.log"
 USER_AGENT = "OfflineWikipediaDaily/1.0 (personal offline copy; claudecode6672@gmail.com)"
+# 나무위키는 스크립트 UA를 차단하므로 브라우저 UA 사용
+BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
 STYLE = """<style>
 body { max-width: 860px; margin: 2em auto; padding: 0 1em;
@@ -39,9 +42,14 @@ def load_pages():
 
 
 def fetch_page(lang, title, retries=2):
-    url = "https://{}.wikipedia.org/api/rest_v1/page/html/{}".format(
-        lang, urllib.parse.quote(title.replace(" ", "_"), safe=""))
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    if lang == "namu":
+        url = "https://namu.wiki/w/" + urllib.parse.quote(title, safe="")
+        ua = BROWSER_UA
+    else:
+        url = "https://{}.wikipedia.org/api/rest_v1/page/html/{}".format(
+            lang, urllib.parse.quote(title.replace(" ", "_"), safe=""))
+        ua = USER_AGENT
+    req = urllib.request.Request(url, headers={"User-Agent": ua})
     for attempt in range(retries + 1):
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
@@ -54,10 +62,17 @@ def fetch_page(lang, title, retries=2):
 
 def save_page(lang, title, html):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if lang == "namu":
+        site, base = "namu.wiki", "https://namu.wiki/"
+        # SPA 스크립트가 오프라인 사본을 다시 그리려다 깨지지 않게 제거 (SSR 본문만 남김)
+        html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.S | re.I)
+    else:
+        site = "{}.wikipedia.org".format(lang)
+        base = "https://{}.wikipedia.org/wiki/".format(lang)
     banner = ('<div class="updated-banner">📄 오프라인 사본 — {} 기준 '
-              '({}.wikipedia.org / {})</div>'.format(now, lang, title))
+              '({} / {})</div>'.format(now, site, title))
     # 상대 경로 리소스(이미지 등)가 온라인일 때 보이도록 base 지정
-    head_extra = '<base href="https://{}.wikipedia.org/wiki/">{}'.format(lang, STYLE)
+    head_extra = '<base href="{}">{}'.format(base, STYLE)
     html = re.sub(r"<head([^>]*)>", r"<head\1>" + head_extra.replace("\\", "\\\\"), html, count=1)
     html = re.sub(r"<body([^>]*)>", r"<body\1>" + banner.replace("\\", "\\\\"), html, count=1)
     safe_name = title.replace("/", "_")
