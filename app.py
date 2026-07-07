@@ -5,6 +5,8 @@
 실행: python3 app.py [--open]   (--open이면 브라우저 자동 열기)
 """
 import json
+import mimetypes
+import shutil
 import sys
 import threading
 import webbrowser
@@ -65,6 +67,9 @@ def remove_page(lang, title):
     f = BASE_DIR / page_filename(lang, title)
     if f.exists():
         f.unlink()
+    photos = BASE_DIR / "{} 사진".format(title.replace("/", "_"))
+    if photos.is_dir():
+        shutil.rmtree(photos)
     return {"ok": True}
 
 
@@ -118,8 +123,13 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/files/"):
             name = path[len("/files/"):]
             target = (BASE_DIR / name).resolve()
-            if target.parent == BASE_DIR and target.suffix == ".html" and target.exists():
-                return self._file(target, "text/html; charset=utf-8")
+            # 사진 폴더 등 하위 경로도 서빙 (BASE_DIR 밖 접근 차단)
+            if target.is_file() and str(target).startswith(str(BASE_DIR) + "/"):
+                if target.suffix == ".html":
+                    return self._file(target, "text/html; charset=utf-8")
+                ctype = mimetypes.guess_type(target.name)[0]
+                if ctype and ctype.startswith("image/"):
+                    return self._file(target, ctype)
         self._json({"error": "not found"}, 404)
 
     def do_POST(self):

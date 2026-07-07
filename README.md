@@ -63,9 +63,12 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.offline-wiki
 
 ⚠️ **주의**: 프로젝트 폴더를 `~/Desktop`, `~/Documents`, `~/Downloads` 아래에 두면 macOS 보안(TCC) 때문에 launchd 자동 실행이 `Operation not permitted`로 실패한다. `~/Library/OfflineWikipedia` 같은 보호 구역 밖 경로에 두고, 필요하면 원하는 위치에 심볼릭 링크를 만들자.
 
+## 이미지
+
+문서의 이미지는 **`<문서제목> 사진/`** 폴더에 함께 저장되고, 사본이 로컬 파일을 가리키므로 완전 오프라인에서도 보인다. 같은 이미지는 다음 갱신 때 다시 받지 않는다 (URL 해시 캐싱). 문서를 삭제하면 사진 폴더도 함께 삭제된다.
+
 ## 한계
 
-- 본문 텍스트와 표는 완전 오프라인으로 읽을 수 있지만, 이미지는 위키백과 서버에서 불러오므로 온라인일 때만 보인다.
 - 위키피디아가 블랙아웃 항의를 하면 매직펜으로 직접 칠해야 한다.
 
 ---
@@ -135,7 +138,10 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.offline-wiki
 
 ⚠️ **Warning**: If the project folder lives under `~/Desktop`, `~/Documents`, or `~/Downloads`, macOS privacy protection (TCC) blocks launchd from running it — you'll get `Operation not permitted`. Keep it outside protected areas (e.g. `~/Library/OfflineWikipedia`) and drop a symlink wherever you like.
 
+## Images
+
+Each article's images are saved into a **`<article title> 사진/`** folder, and the offline copy points at the local files, so they work fully offline. Unchanged images aren't re-downloaded on later updates (URL-hash caching). Removing an article deletes its photo folder too.
+
 ## Limitations
 
-- Article text and tables are fully readable offline, but images are loaded from Wikipedia's servers, so they only show up while online.
 - If Wikipedia stages a blackout protest, you'll have to black out the pages with a marker yourself.

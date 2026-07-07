@@ -2,4 +2,5 @@
 *.html
 !index.html
 *.log
+* 사진/
 .DS_Store
