@@ -21,6 +21,22 @@ USER_AGENT = "OfflineWikipediaDaily/1.0 (personal offline copy; claudecode6672@g
 BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
+# 진행도 보고 훅 — 앱(app.py)이 등록하면 이미지 다운로드 진행 상황을 알려줌
+PROGRESS_CB = None
+
+
+def set_progress_cb(cb):
+    global PROGRESS_CB
+    PROGRESS_CB = cb
+
+
+def _report(**info):
+    if PROGRESS_CB:
+        try:
+            PROGRESS_CB(info)
+        except Exception:
+            pass
+
 STYLE = """<style>
 body { max-width: 860px; margin: 2em auto; padding: 0 1em;
        font-family: -apple-system, "Apple SD Gothic Neo", sans-serif; line-height: 1.6; }
@@ -129,8 +145,7 @@ def localize_images(html, page_base, title):
         seen[url] = local
         return local
 
-    def repl(m):
-        tag = m.group(0)
+    def process(tag):
         # lazy-loading(나무위키)은 진짜 주소가 data-src에 있음
         src = re.search(r'\bdata-src=(["\'])([^"\']+)\1', tag) or \
               re.search(r'\bsrc=(["\'])([^"\']+)\1', tag)
@@ -145,6 +160,15 @@ def localize_images(html, page_base, title):
             local = url  # 실패하면 온라인 주소라도 남김
         tag = re.sub(r'\s+(srcset|data-src|data-srcset|loading)=(["\'])[^"\']*\2', "", tag)
         return re.sub(r'\bsrc=(["\'])[^"\']*\1', 'src="{}"'.format(local), tag)
+
+    total = len(re.findall(r"<img\b[^>]*>", html))
+    state = {"done": 0}
+
+    def repl(m):
+        out = process(m.group(0))
+        state["done"] += 1
+        _report(done=state["done"], total=total)
+        return out
 
     return re.sub(r"<img\b[^>]*>", repl, html)
 

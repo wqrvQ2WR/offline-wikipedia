@@ -48,6 +48,15 @@
   .toolbar { display: flex; justify-content: space-between; align-items: center;
              margin-bottom: 10px; }
   .toolbar h2 { font-size: 16px; margin: 0; color: #54595d; }
+  #progress { margin-top: 12px; }
+  .pbar-label { display: flex; justify-content: space-between; font-size: 13px;
+                color: #54595d; margin-bottom: 6px; }
+  .pbar-label .pct { font-weight: 700; color: #36c; font-variant-numeric: tabular-nums; }
+  .pbar { height: 10px; background: #eaecf0; border-radius: 6px; overflow: hidden; }
+  .pbar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #36c, #5a8bff);
+               border-radius: 6px; transition: width .25s ease; }
+  .pbar-fill.pulse { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .55; } }
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
            background: #202122; color: #fff; padding: 11px 20px; border-radius: 10px;
            font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none;
@@ -71,6 +80,12 @@
       <input type="text" id="search" placeholder="추가할 문서 검색 (예: 달, 파이썬)" autocomplete="off">
       <button id="addBtn">추가</button>
       <div class="suggest" id="suggest" hidden></div>
+    </div>
+    <div id="progress" hidden>
+      <div class="pbar-label">
+        <span id="pLabel">준비 중…</span><span class="pct" id="pPct">0%</span>
+      </div>
+      <div class="pbar"><div class="pbar-fill" id="pFill"></div></div>
     </div>
   </div>
 
@@ -132,20 +147,59 @@ async function refresh() {
   });
 }
 
+function setBusy(b) {
+  $('addBtn').disabled = b;
+  $('updateBtn').disabled = b;
+  $('addBtn').textContent = b ? '다운로드 중…' : '추가';
+  $('updateBtn').textContent = b ? '갱신 중…' : '🔄 전체 갱신';
+}
+
+function renderProgress(p) {
+  const idx = p.doc_index || 0, total = p.doc_total || 1;
+  let frac = 0;  // 문서 하나 안에서의 진행: 본문 20% + 이미지 80%
+  if (p.phase === 'save') frac = p.img_total ? 0.2 + 0.8 * (p.img_done / p.img_total) : 0.5;
+  const overall = Math.min(((idx + frac) / total) * 100, 99);
+  $('pFill').style.width = overall + '%';
+  $('pPct').textContent = Math.round(overall) + '%';
+  $('pFill').classList.toggle('pulse', p.phase === 'fetch');
+  const docPart = total > 1 ? ` (${idx + 1}/${total})` : '';
+  $('pLabel').textContent = p.phase === 'fetch'
+    ? `"${p.title}" 본문 받는 중${docPart}`
+    : `"${p.title}" 이미지 저장 중${docPart} · ${p.img_done}/${p.img_total}장`;
+}
+
+async function trackProgress() {
+  setBusy(true);
+  $('progress').hidden = false;
+  let p = null;
+  while (true) {
+    try { p = await api('/api/progress'); } catch (e) { break; }
+    if (!p.active) break;
+    renderProgress(p);
+    await new Promise(r => setTimeout(r, 300));
+  }
+  $('pFill').classList.remove('pulse');
+  $('pFill').style.width = '100%';
+  $('pPct').textContent = '100%';
+  setTimeout(() => { $('progress').hidden = true; $('pFill').style.width = '0%'; }, 600);
+  setBusy(false);
+  refresh();
+  return p && p.last;
+}
+
 async function addPage(title) {
   const lang = $('lang').value;
   title = (title || $('search').value).trim();
   if (!title) return;
   $('suggest').hidden = true;
-  $('addBtn').disabled = true;
-  $('addBtn').textContent = '다운로드 중…';
   try {
     const r = await api('/api/add', { lang, title });
-    if (r.ok) { toast(`"${title}" 추가 완료 ✓`); $('search').value = ''; refresh(); }
-    else toast(r.error || '추가 실패');
+    if (!r.ok) { toast(r.error || '추가 실패'); return; }
+    const last = await trackProgress();
+    const res = last && last.results && last.results[0];
+    if (res && res.ok) { toast(`"${title}" 추가 완료 ✓`); $('search').value = ''; }
+    else toast(res && res.error ? `추가 실패: ${res.error}` : '추가 실패');
   } catch (e) { toast('오류: ' + e.message); }
-  $('addBtn').disabled = false;
-  $('addBtn').textContent = '추가';
 }
 
 // 나무위키는 검색 API가 없어서 정확한 제목 직접 입력
@@ -184,20 +238,21 @@ document.addEventListener('click', e => {
 $('addBtn').onclick = () => addPage();
 
 $('updateBtn').onclick = async () => {
-  $('updateBtn').disabled = true;
-  $('updateBtn').textContent = '갱신 중…';
   try {
     const r = await api('/api/update', {});
-    const ok = r.results.filter(x => x.ok).length;
-    const fail = r.results.length - ok;
-    toast(`전체 갱신 완료: 성공 ${ok}건${fail ? `, 실패 ${fail}건` : ''}`);
-    refresh();
+    if (!r.ok) { toast(r.error || '갱신 시작 실패'); return; }
+    const last = await trackProgress();
+    if (last) {
+      const ok = last.results.filter(x => x.ok).length;
+      const fail = last.results.length - ok;
+      toast(`전체 갱신 완료: 성공 ${ok}건${fail ? `, 실패 ${fail}건` : ''}`);
+    }
   } catch (e) { toast('갱신 오류: ' + e.message); }
-  $('updateBtn').disabled = false;
-  $('updateBtn').textContent = '🔄 전체 갱신';
 };
 
 refresh();
+// 페이지를 새로 열었는데 다운로드가 진행 중이면 이어서 표시
+api('/api/progress').then(p => { if (p.active) trackProgress(); });
 </script>
 </body>
 </html>

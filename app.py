@@ -39,18 +39,65 @@ def list_pages():
     return out
 
 
-def download_one(lang, title):
-    html = wiki.fetch_page(lang, title)
-    return wiki.save_page(lang, title, html)
+# ---- 진행도 추적 백그라운드 다운로드 ----
+PROG_LOCK = threading.Lock()
+PROGRESS = {"active": False, "last": None}
+
+
+def _on_image_progress(info):
+    with PROG_LOCK:
+        if PROGRESS["active"]:
+            PROGRESS["img_done"] = info.get("done", 0)
+            PROGRESS["img_total"] = info.get("total", 0)
+
+
+wiki.set_progress_cb(_on_image_progress)
+
+
+def start_task(kind, items):
+    with PROG_LOCK:
+        if PROGRESS["active"]:
+            return {"ok": False, "error": "이미 다른 다운로드가 진행 중이에요."}
+        PROGRESS.update({"active": True, "kind": kind, "doc_index": 0,
+                         "doc_total": len(items), "title": "", "phase": "fetch",
+                         "img_done": 0, "img_total": 0, "last": None})
+    threading.Thread(target=_run_task, args=(kind, items), daemon=True).start()
+    return {"ok": True, "started": True}
+
+
+def _run_task(kind, items):
+    results = []
+    for i, (lang, title) in enumerate(items):
+        with PROG_LOCK:
+            PROGRESS.update({"doc_index": i, "title": title,
+                             "phase": "fetch", "img_done": 0, "img_total": 0})
+        try:
+            html = wiki.fetch_page(lang, title)
+            with PROG_LOCK:
+                PROGRESS["phase"] = "save"
+            out = wiki.save_page(lang, title, html)
+            results.append({"lang": lang, "title": title, "ok": True,
+                            "size": out.stat().st_size})
+            if kind == "add":
+                with (BASE_DIR / "pages.txt").open("a", encoding="utf-8") as f:
+                    f.write("{}:{}\n".format(lang, title))
+        except Exception as e:
+            results.append({"lang": lang, "title": title, "ok": False, "error": str(e)})
+    ok = sum(1 for r in results if r["ok"])
+    if kind == "update":
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with (BASE_DIR / "update.log").open("a", encoding="utf-8") as f:
+            f.write("[{}] (앱에서 수동 갱신) 성공 {}건, 실패 {}건\n".format(
+                stamp, ok, len(results) - ok))
+    with PROG_LOCK:
+        PROGRESS.update({"active": False,
+                         "last": {"kind": kind, "results": results}})
 
 
 def add_page(lang, title):
     if (lang, title) in wiki.load_pages():
         return {"ok": False, "error": "이미 목록에 있는 문서예요."}
-    out = download_one(lang, title)  # 받아지는 문서인지 먼저 확인
-    with (BASE_DIR / "pages.txt").open("a", encoding="utf-8") as f:
-        f.write("{}:{}\n".format(lang, title))
-    return {"ok": True, "file": out.name}
+    return start_task("add", [(lang, title)])
 
 
 def remove_page(lang, title):
@@ -74,20 +121,7 @@ def remove_page(lang, title):
 
 
 def update_all():
-    results = []
-    for lang, title in wiki.load_pages():
-        try:
-            out = download_one(lang, title)
-            results.append({"lang": lang, "title": title, "ok": True,
-                            "size": out.stat().st_size})
-        except Exception as e:
-            results.append({"lang": lang, "title": title, "ok": False, "error": str(e)})
-    ok = sum(1 for r in results if r["ok"])
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with (BASE_DIR / "update.log").open("a", encoding="utf-8") as f:
-        f.write("[{}] (앱에서 수동 갱신) 성공 {}건, 실패 {}건\n".format(
-            stamp, ok, len(results) - ok))
-    return {"ok": True, "results": results}
+    return start_task("update", wiki.load_pages())
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -120,6 +154,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(BASE_DIR / "index.html", "text/html; charset=utf-8")
         if path == "/api/pages":
             return self._json({"pages": list_pages()})
+        if path == "/api/progress":
+            with PROG_LOCK:
+                return self._json(dict(PROGRESS))
         if path.startswith("/files/"):
             name = path[len("/files/"):]
             target = (BASE_DIR / name).resolve()
