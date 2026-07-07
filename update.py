@@ -60,19 +60,41 @@ def fetch_page(lang, title, retries=2):
             time.sleep(3)
 
 
+def inline_stylesheets(html, base_url):
+    """<link rel=stylesheet>를 CSS 본문을 담은 <style>로 교체해 오프라인에서도 스타일 유지."""
+    def repl(m):
+        tag = m.group(0)
+        href = re.search(r'href=["\']([^"\']+)', tag)
+        if not href:
+            return tag
+        url = urllib.parse.urljoin(base_url, href.group(1))
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return "<style>{}</style>".format(resp.read().decode("utf-8", "replace"))
+        except Exception:
+            return tag  # 실패하면 원래 링크 유지 (온라인에선 여전히 동작)
+    return re.sub(r'<link\b[^>]*rel=["\']stylesheet["\'][^>]*>', repl, html)
+
+
 def save_page(lang, title, html):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     if lang == "namu":
         site, base = "namu.wiki", "https://namu.wiki/"
         # SPA 스크립트가 오프라인 사본을 다시 그리려다 깨지지 않게 제거 (SSR 본문만 남김)
         html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.S | re.I)
+        # 난독화 클래스 기반 CSS를 통째로 심어야 오프라인에서 제대로 보임
+        html = inline_stylesheets(html, base)
+        extra_css = ""  # 나무위키 자체 스타일과 충돌하지 않게 우리 스타일은 생략
     else:
         site = "{}.wikipedia.org".format(lang)
         base = "https://{}.wikipedia.org/wiki/".format(lang)
-    banner = ('<div class="updated-banner">📄 오프라인 사본 — {} 기준 '
+        extra_css = STYLE
+    banner = ('<div style="background:#f8f9fa;border:1px solid #a2a9b1;padding:8px 12px;'
+              'font-size:.85em;color:#54595d;margin-bottom:1.5em;">📄 오프라인 사본 — {} 기준 '
               '({} / {})</div>'.format(now, site, title))
     # 상대 경로 리소스(이미지 등)가 온라인일 때 보이도록 base 지정
-    head_extra = '<base href="{}">{}'.format(base, STYLE)
+    head_extra = '<base href="{}">{}'.format(base, extra_css)
     html = re.sub(r"<head([^>]*)>", r"<head\1>" + head_extra.replace("\\", "\\\\"), html, count=1)
     html = re.sub(r"<body([^>]*)>", r"<body\1>" + banner.replace("\\", "\\\\"), html, count=1)
     safe_name = title.replace("/", "_")
